@@ -7,6 +7,8 @@ This script is most definitely a work-in-progress.  Not all property types are s
 
 ## Usage
 
+JSON output is printed to standard out.  It can and will quickly overflow the terminal scrollback buffer, re-directing to a file is basically mandatory.
+
 ```
 usage: datatable-to-json.py [file]
 
