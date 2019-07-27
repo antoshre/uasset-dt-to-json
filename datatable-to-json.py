@@ -144,6 +144,7 @@ class PrefixArray(BaseElem):
 	def __init__(self, Type, stream):
 		super().__init__(stream)
 		self.Count = Int32(stream)
+		print("Creating PrefixArray of type {} size {}".format(Type, self.Count.value()))
 		self.Elems = [Type(stream) for _ in range(self.Count.value())]
 	def __getitem__(self, key):
 		return self.Elems[key]
@@ -151,6 +152,7 @@ class FixedArray(BaseElem):
 	def __init__(self, Type, Count, stream):
 		super().__init__(stream)
 		self.Count = Count
+		#print("Creating FixedArray of type {} size {}".format(Type, self.Count.value()))
 		self.Elems = [Type(stream) for _ in range(self.Count.value())]
 	def __getitem__(self, key):
 		if (key >= 0 and key <= len(self.Elems)):
@@ -358,13 +360,16 @@ class FPropertyGuid(BaseElem):
 class UObjectProperty(FPropertyTag):
 	def __init__(self, stream):
 		super().__init__(stream)
+		if (debug):
+			print(self.__class__.__name__  + " @ {}".format(stream.tell()))
 		self.Id = FPropertyGuid(stream)
 		self.Package = FPackageIndex(stream)
 		self.Value = self.Package
 class UArrayProperty(FPropertyTag):
 	def __init__(self, stream):
 		super().__init__(stream)
-		#print("UArray @ 0x{:X}".format(self.offset))
+		if (debug):
+			print(self.__class__.__name__  + " @ {}".format(stream.tell()))
 		self.Type = FName(stream)
 		self.Guid = FPropertyGuid(stream)
 		self.Size = Int32(stream)
@@ -387,6 +392,8 @@ class UArrayProperty(FPropertyTag):
 class USpecialName(BaseElem):
 	def __init__(self, stream):
 		super().__init__(stream)
+		if (debug):
+			print(self.__class__.__name__  + " @ {}".format(stream.tell()))
 		self.Index = Int32(stream)
 		self._unknown = UInt32(stream)
 		self.Value = SummaryNames[self.Index.value()]
@@ -394,6 +401,8 @@ class USpecialName(BaseElem):
 class UStrProperty(FPropertyTag):
 	def __init__(self, stream):
 		super().__init__(stream)
+		if (debug):
+			print(self.__class__.__name__  + " @ {}".format(stream.tell()))
 		self.Guid = FPropertyGuid(stream)
 		self.String = UE4String(stream)
 		self.Value = self.String
@@ -401,6 +410,8 @@ class UStrProperty(FPropertyTag):
 class UNameProperty(FPropertyTag):
 	def __init__(self, stream):
 		super().__init__(stream)
+		if (debug):
+			print(self.__class__.__name__  + " @ {}".format(stream.tell()))
 		self.Guid = FPropertyGuid(stream)
 		#Why is this name offset only 32 bits?!
 		self.Value = FName_special(stream)
@@ -409,17 +420,23 @@ class UNameProperty(FPropertyTag):
 class UByteProperty(FPropertyTag):
 	def __init__(self, stream):
 		super().__init__(stream)
+		if (debug):
+			print(self.__class__.__name__  + " @ {}".format(stream.tell()))
 		self.EnumName = FName(stream)
 		self.Guid = FPropertyGuid(stream)
 		self.Value = FName(stream)
 class UIntProperty(FPropertyTag):
 	def __init__(self, stream):
 		super().__init__(stream)
+		if (debug):
+			print(self.__class__.__name__  + " @ {}".format(stream.tell()))
 		self.Guid = FPropertyGuid(stream)
 		self.Value = Int32(stream)
 class UUInt32Property(FPropertyTag):
 	def __init__(self, stream):
 		super().__init__(stream)
+		if (debug):
+			print(self.__class__.__name__  + " @ {}".format(stream.tell()))
 		self.Guid = FPropertyGuid(stream)
 		self.Value = UInt32(stream)
 		
@@ -427,17 +444,23 @@ class UUInt32Property(FPropertyTag):
 class UFloatProperty(FPropertyTag):
 	def __init__(self, stream):
 		super().__init__(stream)
+		if (debug):
+			print(self.__class__.__name__  + " @ {}".format(stream.tell()))
 		self.Guid = FPropertyGuid(stream)
 		self.Value = Float4(stream)
 class UBoolProperty(FPropertyTag):
 	def __init__(self, stream):
 		super().__init__(stream)
+		if (debug):
+			print(self.__class__.__name__  + " @ {}".format(stream.tell()))
 		self.Value = UInt8(stream)
 		self.Guid = FPropertyGuid(stream)
 
 class USoftObjectProperty(FPropertyTag):
 	def __init__(self, stream):
 		super().__init__(stream)
+		if (debug):
+			print(self.__class__.__name__  + " @ {}".format(stream.tell()))
 		self.Guid = FPropertyGuid(stream)
 		self.Package = FName(stream)
 		self.Path = UE4String(stream)
@@ -448,6 +471,8 @@ class USoftObjectProperty(FPropertyTag):
 class UEnumProperty(FPropertyTag):
 	def __init__(self, stream):
 		super().__init__(stream)
+		if (debug):
+			print(self.__class__.__name__  + " @ {}".format(stream.tell()))
 		self.EnumName = FName(stream)
 		self.Guid = FPropertyGuid(stream)
 		self.Value = FName(stream)
@@ -455,6 +480,8 @@ class UEnumProperty(FPropertyTag):
 class UTextProperty(FPropertyTag):
 	def __init__(self, stream):
 		super().__init__(stream)
+		if (debug):
+			print(self.__class__.__name__  + " @ {}".format(stream.tell()))
 		self.Guid = FPropertyGuid(stream)
 		self._unknown = UInt64(stream) #TODO: what is this?
 		self.Key = FPropertyGuid(stream)
@@ -488,6 +515,14 @@ class UObject(BaseElem):
 			
 			#decode a full FPropertyTag to get next Type name
 			tag = FPropertyTag(stream)
+			
+			if(debug):
+				print("UObject tag decoded:\n",
+						tag.Name.value().Name.String,
+						tag.Type.value().Name.String,
+						tag.Size.value(),
+						tag.Index.value()
+					)
 			
 			stream.seek(saved)
 			
@@ -621,7 +656,12 @@ if __name__ == "__main__":
 	parser.add_argument('--no-names', help='Do not dump name table', action='store_true') #don't output Names
 	parser.add_argument('--no-data', help='Do not dump exported data', action='store_true') #don't output exported data
 	parser.add_argument('--values-only', help='Only print values, not offset/length information', action='store_true')
+	parser.add_argument('--debug', help='Verbose (and buggy) printing of FPropertyTag parsing. This *will* break JSON formatting!', action='store_true')
 	args = parser.parse_args()
+	
+	#set debug flag from argument
+	debug = args.debug
+	
 	#Parse uasset file
 	uasset = UAsset(args.filename)
 	
