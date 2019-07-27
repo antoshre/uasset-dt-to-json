@@ -360,6 +360,7 @@ class UObjectProperty(FPropertyTag):
 		super().__init__(stream)
 		self.Id = FPropertyGuid(stream)
 		self.Package = FPackageIndex(stream)
+		self.Value = self.Package
 class UArrayProperty(FPropertyTag):
 	def __init__(self, stream):
 		super().__init__(stream)
@@ -451,6 +452,15 @@ class UEnumProperty(FPropertyTag):
 		self.Guid = FPropertyGuid(stream)
 		self.Value = FName(stream)
 		
+class UTextProperty(FPropertyTag):
+	def __init__(self, stream):
+		super().__init__(stream)
+		self.Guid = FPropertyGuid(stream)
+		self._unknown = UInt64(stream) #TODO: what is this?
+		self.Key = FPropertyGuid(stream)
+		self.Hash = UE4String(stream)
+		self.Value = UE4String(stream)
+		
 class UAsset(BaseElem):
 	def __init__(self, stream):
 		super().__init__(stream)
@@ -493,8 +503,9 @@ class UObject(BaseElem):
 				0x8AB0 : UBoolProperty,
 				0x4A38 : UUInt32Property,
 				0xFDDE : UFloatProperty,
-				#0xFAAE : USoftObjectProperty,
-				#0x409D : UEnumProperty,
+				0xB774 : UTextProperty,
+				0xFAAE : USoftObjectProperty,
+				0x409D : UEnumProperty,
 			}
 			
 			if (taghash in lookup):
