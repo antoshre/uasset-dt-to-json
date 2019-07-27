@@ -604,18 +604,17 @@ if __name__ == "__main__":
 	import sys
 	parser = argparse.ArgumentParser( \
 			description='Dump UAsset DataTable to JSON',
-			usage='%(prog)s [input]'
+			usage='%(prog)s [filename]'
 			)
-	parser.add_argument('input', type=argparse.FileType('rb'))
+	parser.add_argument('filename', help='UAsset filename', type=argparse.FileType('rb'))
 	parser.add_argument('--no-names', help='Do not dump name table', action='store_true') #don't output Names
 	parser.add_argument('--no-data', help='Do not dump exported data', action='store_true') #don't output exported data
 	parser.add_argument('--values-only', help='Only print values, not offset/length information', action='store_true')
 	args = parser.parse_args()
 	#Parse uasset file
-	uasset = UAsset(args.input)
+	uasset = UAsset(args.filename)
 	
 	if (args.values_only):
-		print("Using info-only class")
 		iclass = ItemInfoOnly
 	else:
 		iclass =  Item
