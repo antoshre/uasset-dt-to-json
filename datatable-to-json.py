@@ -144,7 +144,7 @@ class PrefixArray(BaseElem):
 	def __init__(self, Type, stream):
 		super().__init__(stream)
 		self.Count = Int32(stream)
-		print("Creating PrefixArray of type {} size {}".format(Type, self.Count.value()))
+		#print("Creating PrefixArray of type {} size {}".format(Type, self.Count.value()))
 		self.Elems = [Type(stream) for _ in range(self.Count.value())]
 	def __getitem__(self, key):
 		return self.Elems[key]
@@ -158,7 +158,7 @@ class FixedArray(BaseElem):
 		if (key >= 0 and key <= len(self.Elems)):
 			return self.Elems[key]
 		else:
-			print("Bad key access: {}".format(key))
+			#print("Bad key access: {}".format(key))
 			msg = "BADKEY:{}".format(key)
 			bytestream = struct.pack("i", len(msg)) + msg.encode("utf-8") + struct.pack("hh", 0,0)
 			fake = FNameEntry( BytesIO(bytestream))
