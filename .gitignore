@@ -1,5 +1,7 @@
 #Ignore JSON files laying around
 *.json
+#Ignore .uasset files
+*.uasset
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
