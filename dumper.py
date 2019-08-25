@@ -739,26 +739,31 @@ class UMulticastDelegateProperty(FPropertyTag):
 #Filename is actual file name
 #ie: "PB_DT_DropRateMaster.uasset"
 def dumpFile(filename, debug=False):
-	print("Parsing {}".format(filename))
+	if (debug):
+		print("Parsing {}".format(filename))
 	with open(filename, 'rb') as file:
 		ctx = ParserCtx(file, debug=debug)
 		uasset = UAsset(ctx)
-		print("Dumping Names...")
-		j = json.dumps(uasset.Summary.Names, cls=To_Dump_Encoder, indent=2, sort_keys=False)
-		with open(file.name[:-7] + "-names.json", 'w') as outputfile:
-			outputfile.write(j)
-		print("done")
+		if (ctx.debug):
+			print("Dumping Names...")
+		names = json.dumps(uasset.Summary.Names, cls=To_Dump_Encoder, indent=2, sort_keys=False)
+		if (ctx.debug):
+			print("done")
 		
-		print("Dumping exports...")
+		if (ctx.debug):
+			print("Dumping exports...")
+		exports = []
 		for i,export in enumerate(uasset.Summary.Exports):
-			j = json.dumps(export.Object, cls=To_Dump_Encoder, indent=2, sort_keys=True)
-			with open(file.name[:-7] + "-export-" + str(i) + ".json", "w") as outputfile:
-				outputfile.write(j)
-		print("done")
+			exports.append( json.dumps(export.Object, cls=To_Dump_Encoder, indent=2, sort_keys=True))
+		if (ctx.debug):
+			print("done")
 		
-		print("Dumping imports...")
+		if (ctx.debug):
+			print("Dumping imports...")
+		imports = []
 		for i,imp in enumerate(uasset.Summary.Imports):
-			j = json.dumps(export.Object, cls=To_Dump_Encoder, indent=2, sort_keys=True)
-			with open(file.name[:-7] + "-import-" + str(i) + ".json", "w") as outputfile:
-				outputfile.write(j)
-		print("done")
+			imports.append( json.dumps(export.Object, cls=To_Dump_Encoder, indent=2, sort_keys=True) )
+		if (ctx.debug):
+			print("done")
+		
+		return (names, exports, imports)
