@@ -1,777 +1,737 @@
-import os
+#UE4 header-essential primitives
+
 import struct
 import binascii
 import json
-from collections import OrderedDict
-from functools import total_ordering
-from io import *
 
-debug = False
+
+from io import BytesIO
+
+class To_Dump_Encoder(json.JSONEncoder):
+	def default(self, obj):
+		if isinstance(obj, bytes):
+			return str(binascii.hexlify(obj))
+		return obj.to_dump()
+
+
+class ParserCtx():
+	def __init__(self, stream, debug=False):
+		self.stream = stream
+		self.debug = debug
+	def seek(self, i):
+		return self.stream.seek(i)
+	def tell(self):
+		return self.stream.tell()
+	def read(self, i):
+		return self.stream.read(i)
+	def decodeHash(self, hash):
+		lookup = {
+			0x69E3 : UArrayProperty,
+			0xFC9C : UStructProperty,
+			0xEAB3 : UObjectProperty,
+			0xFAAE : USoftObjectProperty,
+			0xC02D : UByteProperty,
+			0x2472 : UStrProperty,
+			0x4A08 : UNameProperty,
+			0x4A36 : UIntProperty,
+			0x4A38 : UUInt32Property,
+			0x8AB0 : UBoolProperty,
+			0xFDDE : UFloatProperty,
+			0x409D : UEnumProperty,
+			0xB774 : UTextProperty,
+			0x2AAB : UMulticastDelegateProperty,
+		}
+		
+		if hash in lookup:
+			return lookup[hash]
+		else:
+			raise NotImplementedError("Tag hash# 0x{:02X}".format(hash))
 
 class BaseElem():
-	def __init__(self, stream):
-		self.offset = stream.tell()
+	def __init__(self, ctx):
+		self.offset = ctx.tell()
 		
-class ByteX(BaseElem):
-	def __init__(self, size, stream):
-		super().__init__(stream)
-		self.raw = stream.read(size)
-	def value(self):
-		return self.raw
-@total_ordering
-class IntX(BaseElem):
-	def __init__(self, size, stream):
-		super().__init__(stream)
-		self.raw = stream.read(size)
-	def __eq__(self, other):
-		if isinstance(other, self.__class__):
-			return self.value() == other.value()
-		if isinstance(other, int):
-			return self.value() == other
-		raise NotImplementedError(type(other))
-	def __lt__(self, other):
-		if isinstance(other, self.__class__):
-			return self.value() < other.value()
-		if isinstance(other, int):
-			return self.value() < other
-		raise NotImplementedError(type(other))
+class Primitive(BaseElem):
+	def __init__(self, ctx):
+		super().__init__(ctx)
+	def __str__(self):
+		return self.__class__.__name__ + "( {}, offset={} )".format(self.value(), self.offset)
+
+class IntX(Primitive):
+	def __init__(self, ctx, size):
+		super().__init__(ctx)
+		self.raw = ctx.read(size)
 	@classmethod
 	def from_constant(cls, value):
 		stream = BytesIO(b'')
-		obj = cls(0, stream)
+		obj = cls(stream, 0)
 		obj.offset = -1
 		obj.raw = b''
-		obj.value = lambda : value
+		obj.value = lambda: value
 		return obj
-class Int8(IntX):
-	def __init__(self, stream):
-		super().__init__(1, stream)
-	def value(self):
-		return struct.unpack("b", self.raw)[0]
-class Int16(IntX):
-	def __init__(self, stream):
-		super().__init__(2, stream)
+	def to_dump(self):
+		return {
+			'Type' : self.__class__.__name__,
+			'Value' : self.value(),
+			'offset' : self.offset,
+		}
+		
+
+class Int2(IntX):
+	def __init__(self, ctx):
+		super().__init__(ctx, 2)
 	def value(self):
 		return struct.unpack("h", self.raw)[0]
-class Int32(IntX):
-	def __init__(self, stream):
-		super().__init__(4, stream)
+class Int4(IntX):
+	def __init__(self, ctx):
+		super().__init__(ctx, 4)
 	def value(self):
 		return struct.unpack("i", self.raw)[0]
-class Int64(IntX):
-	def __init__(self, stream):
-		super().__init__(8, stream)
+class Int8(IntX):
+	def __init__(self, ctx):
+		super().__init__(ctx, 8)
 	def value(self):
 		return struct.unpack("q", self.raw)[0]
-class Int32_BS(Int32):
-	def value(self):
-		return super().value()//256
-@total_ordering
-class UIntX(BaseElem):
-	def __init__(self, size, stream):
-		super().__init__(stream)
-		self.raw = stream.read(size)
-	def __eq__(self, other):
-		if isinstance(other, self.__class__):
-			return self.value() == other.value()
-		if isinstance(other, int):
-			return self.value() == other
-		raise NotImplementedError(type(other))
-	def __lt__(self, other):
-		if isinstance(other, self.__class__):
-			return self.value() < other.value()
-		if isinstance(other, int):
-			return self.value() < other
-		raise NotImplementedError(type(other))
-	@classmethod
-	def from_constant(cls, value):
-		stream = BytesIO(b'')
-		obj = cls(0, stream)
-		obj.offset = -1
-		obj.raw = b''
-		obj.value = lambda : value
-		return obj	
-class UInt8(IntX):
-	def __init__(self, stream):
-		super().__init__(1, stream)
+		
+class UInt1(IntX):
+	def __init__(self, ctx):
+		super().__init__(ctx, 1)
 	def value(self):
 		return struct.unpack("B", self.raw)[0]
-class UInt16(IntX):
-	def __init__(self, stream):
-		super().__init__(2, stream)
+class UInt2(IntX):
+	def __init__(self, ctx):
+		super().__init__(ctx, 2)
 	def value(self):
 		return struct.unpack("H", self.raw)[0]
-class UInt32(IntX):
-	def __init__(self, stream):
-		super().__init__(4, stream)
+class UInt4(IntX):
+	def __init__(self, ctx):
+		super().__init__(ctx, 4)
 	def value(self):
 		return struct.unpack("I", self.raw)[0]
-class UInt64(IntX):
-	def __init__(self, stream):
-		super().__init__(8, stream)
+class UInt8(IntX):
+	def __init__(self, ctx):
+		super().__init__(ctx, 8)
 	def value(self):
-		return struct.unpack("Q", self.raw)[0]
-class UInt32_BS(UInt32):
+		return struct.unpack("Q", self.raw)[0] 
+class UInt16(IntX):
+	def __init__(self, ctx):
+		super().__init__(ctx, 16)
 	def value(self):
-		return super().value() // 256
-	
-@total_ordering
-class FloatX(BaseElem):
-	def __init__(self, size, stream):
-		super().__init__(stream)
-		self.raw = stream.read(size)
-	def __eq__(self, other):
-		if isinstance(other, self.__class__):
-			return self.value() == other.value()
-		if isinstance(other, int):
-			return self.value() == other
-		raise NotImplementedError(type(other))
-	def __lt__(self, other):
-		if isinstance(other, self.__class__):
-			return self.value() < other.value()
-		if isinstance(other, int):
-			return self.value() < other
-		if isinstance(other, float):
-			return self.value() < other
-		raise NotImplementedError(type(other))
-	@classmethod
-	def from_constant(cls, value):
-		stream = BytesIO(b'')
-		obj = cls(0, stream)
-		obj.offset = -1
-		obj.raw = b''
-		obj.value = lambda : value
-		return obj
-class Float4(FloatX):
-	def __init__(self, stream):
-		super().__init__(4, stream)
+		return struct.unpack("16B", self.raw)[0]
+		
+class Float4(IntX):
+	def __init__(self, ctx):
+		super().__init__(ctx, 4)
 	def value(self):
 		return struct.unpack("f", self.raw)[0]
-	
-class PrefixArray(BaseElem):
-	def __init__(self, Type, stream):
-		super().__init__(stream)
-		self.Count = Int32(stream)
-		#print("Creating PrefixArray of type {} size {}".format(Type, self.Count.value()))
-		self.Elems = [Type(stream) for _ in range(self.Count.value())]
+		
+class UE4Bool(Primitive):
+	def __init__(self, ctx):
+		super().__init__(ctx)
+		self.Raw = UInt4(ctx)
+	def value(self):
+		return self.Raw.value() != 0
+		
+class UE4Guid(Primitive):
+	def __init__(self, ctx):
+		super().__init__(ctx)
+		self.Raw = UInt16(ctx)
+	def value(self):
+		return self.Raw.value()
+		
+class UE4String(Primitive):
+	def __init__(self, ctx):
+		super().__init__(ctx)
+		self.Length = Int4(ctx)
+		if (self.Length.value() >= 0):
+			self.String = ctx.read( self.Length.value()).decode("utf-8")
+		else:
+			self.String = ctx.read( self.Length.value()*-2).decode("utf-16")
+	def value(self):
+		return self.String
+		
+		
+class PrefixArray(Primitive):
+	def __init__(self, Type, ctx):
+		super().__init__(ctx)
+		self.Count = Int4(ctx)
+		self.Elems = [Type(ctx) for _ in range(self.Count.value())]
 	def __getitem__(self, key):
-		return self.Elems[key]
-class FixedArray(BaseElem):
-	def __init__(self, Type, Count, stream):
-		super().__init__(stream)
-		self.Count = Count
-		#print("Creating FixedArray of type {} size {}".format(Type, self.Count.value()))
-		self.Elems = [Type(stream) for _ in range(self.Count.value())]
-	def __getitem__(self, key):
-		if (key >= 0 and key <= len(self.Elems)):
+		if (key in range(self.Count.value()+1)):
 			return self.Elems[key]
 		else:
-			#print("Bad key access: {}".format(key))
-			msg = "BADKEY:{}".format(key)
-			bytestream = struct.pack("i", len(msg)) + msg.encode("utf-8") + struct.pack("hh", 0,0)
-			fake = FNameEntry( BytesIO(bytestream))
-			fake.offset = -1
-			return fake
+			raise AttributeError("Bad key: {} / {}".format(key, self.Count.value()))
 		
-class UE4Bool(BaseElem):
-	def __init__(self, stream):
-		super().__init__(stream)
-		self.raw = stream.read(4)
-	def value(self):
-		return self.raw != b'\x00\x00\x00\x00'
-class UE4Guid(BaseElem):
-	def __init__(self, stream):
-		super().__init__(stream)
-		self.raw = stream.read(16)
-	def value(self):
-		return self.raw
-class UE4String(BaseElem):
-	def __init__(self, stream):
-		super().__init__(stream)
-		self.Length = Int32(stream)
-		if (self.Length >= 0):
-			self.String = stream.read(self.Length.value()).decode("utf-8")
+class FixedArray(Primitive):
+	def __init__(self, Type, Count, ctx):
+		super().__init__(ctx)
+		self.Count = Count
+		self.Elems = [Type(ctx) for _ in range(self.Count.value())]
+		self._ctx = ctx
+	def __getitem__(self, key):
+		if (key in range(self.Count.value()+1)):
+			return self.Elems[key]
 		else:
-			self.String = stream.read(self.Length.value() * -2).decode("utf-16")
-		self.Value = self.String
+			raise AttributeError("Bad key: {} / {}".format(key, self.Count.value()))
+	def to_dump(self):
+		d = {
+			'Count' : self.Count,
+		}
+		for i,entry in enumerate(self.Elems):
+			d[i] = entry
+		return d
 			
-class EObjectFlags(BaseElem):
-	def __init__(self, stream):
-		super().__init__(stream)
-		self.Flags = UInt32(stream)
-class EDynamicType(BaseElem):
-	def __init__(self, stream):
-		super().__init__(stream)
-		self.Flags = UInt32(stream)
+class EObjectFlags(Primitive):
+	def __init__(self, ctx):
+		super().__init__(ctx)
+		self.Flags = UInt4(ctx)
+class EDynamicType(Primitive):
+	def __init__(self, ctx):
+		super().__init__(ctx)
+		self.Flags = UInt4(ctx)
+	def value(self):
+		return self.Flags
+class FCustomVersion(Primitive):
+	def __init__(self, ctx):
+		super().__init__(ctx)
+		self.Key = UE4Guid(ctx)
+	
+class FGenerationInfo(Primitive):
+	def __init__(self, ctx):
+		super().__init__(ctx)
+		self.ExportCount = Int4(ctx)
+		self.NameCount = Int4(ctx)
 		
-class FCustomVersion(BaseElem):
-	def __init__(self, stream):
-		super().__init__(stream)
-		self.Key = UE4Guid(stream)
-class FGenerationInfo(BaseElem):
-	def __init__(self, stream):
-		super().__init__(stream)
-		self.ExportCount = Int32(stream)
-		self.NameCount = Int32(stream)
-class FEngineVersion(BaseElem):
-	def __init__(self, stream):
-		super().__init__(stream)
-		self.Major = UInt32(stream)
-		self.Minor = UInt32(stream)
-		self.Patch = UInt32(stream)
-		self.Changeset = UInt32(stream)
-class FNameEntry(BaseElem):
-	def __init__(self, stream):
-		super().__init__(stream)
-		self.Name = UE4String(stream)
-		self.NonCasePreservingHash = UInt16(stream)
-		self.CasePreservingHash = UInt16(stream)
-class FName(BaseElem):
-	def __init__(self, stream):
-		super().__init__(stream)
-		self.Index = Int64(stream)
+class FEngineVersion(Primitive):
+	def __init__(self, ctx):
+		super().__init__(ctx)
+		self.Major = UInt4(ctx)
+		self.Minor = UInt4(ctx)
+		self.Patch = UInt4(ctx)
+		self.Changeset = UInt4(ctx)
+		
+class FNameEntry(Primitive):
+	def __init__(self, ctx):
+		super().__init__(ctx)
+		self.Name = UE4String(ctx)
+		self.NonCasePreservingHash = UInt2(ctx)
+		self.CasePreservingHash = UInt2(ctx)
+	def to_dump(self):
+		return {
+			'Name' : self.Name.String
+		}
+class FName(Primitive):
+	def __init__(self, ctx):
+		super().__init__(ctx)
+		self.Index = Int4(ctx)
+		self._unknown = UInt4(ctx)
+		self._get_names = lambda: ctx.Names
 	def value(self):
-		return SummaryNames[self.Index.value()]
-class FPackageIndex(BaseElem):
-	def __init__(self, stream):
-		super().__init__(stream)
-		self.Index = Int32(stream)
+		return self._get_names()[self.Index.value()]
+	def to_dump(self):
+		return {
+			'String' : self.value().Name.String,
+			'Index' : self.Index,
+		}
+class FName_short(Primitive):
+	def __init__(self, ctx):
+		super().__init__(ctx)
+		self.Index = Int4(ctx)
+		self._get_names = lambda: ctx.Names
 	def value(self):
+		return self._get_names()[self.Index.value()]
+	def to_dump(self):
+		return {
+			'Index' : self.Index,
+			'Value' : self.value(),
+		}
+		
+class FPackageIndex(Primitive):
+	def __init__(self, ctx):
+		super().__init__(ctx)
+		self.Index = Int4(ctx)
+		self._get_imports = lambda: ctx.Imports
+		self._get_exports = lambda: ctx.Exports
+	def ref(self):
 		importIndex = 0 - self.Index.value() - 1
 		exportIndex = self.Index.value() - 1
 		isImport = self.Index.value() < 0
 		isExport = self.Index.value() > 0
-		if isImport and SummaryImports.Count > importIndex:
-			return SummaryImports[importIndex]
-		if isExport and SummaryExports.Count > exportIndex:
-			return SummaryExports[exportIndex]
+		if (isImport):
+			return self._get_imports()[importIndex]
+		if (isExport):
+			return self._get_exports()[exportIndex]
 		return None
-		#raise LookupError("Index: {}".format(self.Index.value()))
-class FObjectImport(BaseElem):
-	def __init__(self, stream):
-		super().__init__(stream)
-		self.ClassPackage = FName(stream)
-		self.ClassName = FName(stream)
-		self.PackageRef = FPackageIndex(stream)
-		self.ObjectName = FName(stream)
-class FObjectExport(BaseElem):
-	def __init__(self, stream):
-		super().__init__(stream)
-		self.ClassIndex = FPackageIndex(stream)
-		self.SuperIndex = FPackageIndex(stream)
-		self.TemplateIndex = FPackageIndex(stream)
-		self.OuterIndex = FPackageIndex(stream)
-		self.ObjectName = FName(stream)
-		self.ObjectFlags = EObjectFlags(stream)
-		self.SerialSize = Int64(stream)
-		self.SerialOffset = Int64(stream)
-		self.ForcedExport = UE4Bool(stream)
-		self.NotForClient = UE4Bool(stream)
-		self.NotForServer = UE4Bool(stream)
-		self.PackageGuid = UE4Guid(stream)
-		self.PackageFlags = UInt32(stream)
-		self.NotAlwaysLoadedForEditorGame = UE4Bool(stream)
-		self.IsAsset = UE4Bool(stream)
-		self.FirstExportDependency = Int32(stream)
-		self.SerializationBeforeSerializationDependencies = UE4Bool(stream)
-		self.CreateBeforeSerializationDependencies = UE4Bool(stream)
-		self.SerializationBeforeCreateDependnecies = UE4Bool(stream)
-		self.CreateBeforeCreateDependencies = UE4Bool(stream)
-		self.DynamicType = EDynamicType(stream)
-		
-class FPackageFileSummary(BaseElem):
-	def __init__(self, stream):
-		super().__init__(stream)
-		self.Tag = Int32(stream)
-		self.FileVersionUE4 = Int32(stream)
-		self.FileVersionLicenseeUE4 = Int32(stream)
-		self.FileVersionUE3 = Int32(stream)
-		self.FileVersionLicenseeUE3 = Int32(stream)
-		self.CustomVersion = PrefixArray(FCustomVersion, stream)
-		self.TotalHeaderSize = Int32(stream)
-		self.FolderName = UE4String(stream)
-		self.PackageFlags = UInt32(stream)
-		self.NameCount = Int32(stream)
-		self.NameOffset = Int32(stream)
-		self.GatherableNameCount = Int32(stream)
-		self.GatherableNameOffset = Int32(stream)
-		self.ExportCount = Int32(stream)
-		self.ExportOffset = Int32(stream)
-		self.ImportCount = Int32(stream)
-		self.ImportOffset = Int32(stream)
-		self.DependsOffset = Int32(stream)
-		self.SoftPackageReferenceCount = Int32(stream)
-		self.SoftPackageReferenceOffset = Int32(stream)
-		self.SearchableNameOffset = Int32(stream)
-		self.ThumbnailTableOffset = Int32(stream)
-		self.Guid = UE4Guid(stream)
-		self.Generations = PrefixArray(FGenerationInfo, stream)
-		self.SavedByEngineVersion = FEngineVersion(stream)
-		self.CompatibleWithEngineVersion = FEngineVersion(stream)
-		self.CompressionFlags = UInt32(stream)
-		self.PackageSource = UInt32(stream)
-		self.UnVersioned = UE4Bool(stream)
-		self.AssetRegistryDataOffset = Int32(stream)
-		self.BulkDataStartOffset = Int64(stream)
-		self.WorldTileInfoDataOffset = Int32(stream)
-		self.ChunkIDs = PrefixArray(Int32, stream)
-		self.PreloadDependencyCount = Int32(stream)
-		self.PreloadDependencyOffset = Int32(stream)
-		
-		#Time to start bouncing around decoding fields
-		#save current position
-		before_names = stream.tell()
-		#move to NameOffset
-		stream.seek(self.NameOffset.value(), SEEK_SET)
-		#decode Names
-		self.Names = FixedArray(FNameEntry, self.NameCount, stream)
-		
-		#print("Names:")
-		#for i in range(self.NameCount.value()):
-		#	print("{} : {}".format(i, self.Names[i].Name.String))
-		#print("End of Names")
-		#return to saved position
-		stream.seek(before_names, SEEK_SET)
-		
-		global SummaryNames
-		SummaryNames = self.Names
-		
-		before_imports = stream.tell()
-		#print("Parsing Imports...")
-		stream.seek(self.ImportOffset.value())
-		self.Imports = FixedArray(FObjectImport, self.ImportCount, stream)
-		stream.seek(before_imports)
-		global SummaryImports
-		SummaryImports = self.Imports
-		
-		before_exports = stream.tell()
-		stream.seek(self.ExportOffset.value())
-		self.Exports = FixedArray(FObjectExport, self.ExportCount, stream)
-		stream.seek(before_exports)
-		global SummaryExports
-		SummaryExports = self.Exports
-		
-class FPropertyTag(BaseElem):
-	def __init__(self, stream):
-		super().__init__(stream)
-		self.Name = FName(stream)
-		self.Type = FName(stream)
-		self.Size = Int32(stream)
-		self.Index = Int32(stream)
-		
-class FPropertyGuid(BaseElem):
-	def __init__(self, stream):
-		super().__init__(stream)
-		self.HasGuid = UInt8(stream)
-		if (self.HasGuid.value() == 0):
-			self.Guid = None
-		else:
-			self.Guid = UE4Guid(stream)
-	def value(self):
-		return self.Guid
 	
-class UObjectProperty(FPropertyTag):
-	def __init__(self, stream):
-		super().__init__(stream)
-		if (debug):
-			print(self.__class__.__name__  + " @ {}".format(stream.tell()))
-		self.Id = FPropertyGuid(stream)
-		self.Package = FPackageIndex(stream)
-		self.Value = self.Package
-class UArrayProperty(FPropertyTag):
-	def __init__(self, stream):
-		if(debug):
-			print("UArray starting @ {}".format(stream.tell()))
-		super().__init__(stream)
-		if (debug):
-			print(self.__class__.__name__  + " @ {}".format(stream.tell()))
-		self.Type = FName(stream)
-		self.Guid = FPropertyGuid(stream)
-		self.Size = Int32(stream)
-		
-		if (debug):
-			print("\tArray Type:  {}".format(self.Type.value().Name.Value))
-			print("\tGuid: {}".format(self.Guid.value()))
-			print("\tArray size: {}".format( self.Size.value()))
-		
-
-		if(debug):
-			print("\t[UArrayProperty] Creating elements starting @ {}".format(stream.tell()))
-		typename = SummaryNames[self.Type.Index.value()]
-		cph = typename.CasePreservingHash.value()
-		
-		lookup = {
-			#0x4A08 : USpecialName,
-			0xC02D : UByteProperty
-		}
-		if (cph in lookup):
-			#func = lookup[cph]
-			#self.Elems = FixedArray(func, self.Size, stream)
-			t = 8*self.Size.value() + 4 + 33 - 4
-			#self.Elems = stream.read(t)
-			#self.Elems = FixedArray(Int8, IntX.from_constant(t), stream)
-			self.Elems = ByteX(t, stream)
+	def value(self):
+		obj = self.ref()
+		if obj is None:
+			return "Null"
 		else:
-			raise NotImplementedError(typename.Name.String, cph)
-		
-		if(debug):
-			print("\t[UArrayProperty] Array end @ {}".format(stream.tell()))
-		self.Value = self.Elems
-		self._unknown = UInt32(stream)
-#wtf is this for
-class USpecialName(BaseElem):
-	def __init__(self, stream):
-		super().__init__(stream)
-		if (debug):
-			print(self.__class__.__name__  + " @ {}".format(stream.tell()))
-		self.Index = Int32(stream)
-		self._unknown = UInt32(stream)
-		self.Value = SummaryNames[self.Index.value()]
-		#print("USpecialName @ {}, Index: {}".format(self.offset, self.Index.value()))
-class UStrProperty(FPropertyTag):
-	def __init__(self, stream):
-		super().__init__(stream)
-		if (debug):
-			print(self.__class__.__name__  + " @ {}".format(stream.tell()))
-		self.Guid = FPropertyGuid(stream)
-		self.String = UE4String(stream)
-		self.Value = self.String
-
-class UNameProperty(FPropertyTag):
-	def __init__(self, stream):
-		super().__init__(stream)
-		if (debug):
-			print(self.__class__.__name__  + " @ {}".format(stream.tell()))
-		self.Guid = FPropertyGuid(stream)
-		#Why is this name offset only 32 bits?!
-		self.Value = FName_special(stream)
-		self._unknown = UInt32(stream)
-		#self.Value = FName(stream)
-class UByteProperty(FPropertyTag):
-	def __init__(self, stream):
-		super().__init__(stream)
-		if (debug):
-			print(self.__class__.__name__  + " @ {}".format(stream.tell()))
-		self.EnumName = FName(stream)
-		self.Guid = FPropertyGuid(stream)
-		self.Value = FName(stream)
-class UIntProperty(FPropertyTag):
-	def __init__(self, stream):
-		super().__init__(stream)
-		if (debug):
-			print(self.__class__.__name__  + " @ {}".format(stream.tell()))
-		self.Guid = FPropertyGuid(stream)
-		self.Value = Int32(stream)
-class UUInt32Property(FPropertyTag):
-	def __init__(self, stream):
-		super().__init__(stream)
-		if (debug):
-			print(self.__class__.__name__  + " @ {}".format(stream.tell()))
-		self.Guid = FPropertyGuid(stream)
-		self.Value = UInt32(stream)
-		
-		#print("UUint32Property @ {}:\n\tGuid: {}\n\tValue: {}\n".format(self.offset, self.Guid.value(), self.Value.value()))
-class UFloatProperty(FPropertyTag):
-	def __init__(self, stream):
-		super().__init__(stream)
-		if (debug):
-			print(self.__class__.__name__  + " @ {}".format(stream.tell()))
-		self.Guid = FPropertyGuid(stream)
-		self.Value = Float4(stream)
-class UBoolProperty(FPropertyTag):
-	def __init__(self, stream):
-		super().__init__(stream)
-		if (debug):
-			print(self.__class__.__name__  + " @ {}".format(stream.tell()))
-		self.Value = UInt8(stream)
-		self.Guid = FPropertyGuid(stream)
-
-class USoftObjectProperty(FPropertyTag):
-	def __init__(self, stream):
-		super().__init__(stream)
-		if (debug):
-			print(self.__class__.__name__  + " @ {}".format(stream.tell()))
-		self.Guid = FPropertyGuid(stream)
-		self.Package = FName(stream)
-		self.Path = UE4String(stream)
-		#self.Length = UInt32(stream)
-		#self.Path = FixedArray(Int8, self.Length, stream)
-		self.Value = self.Path
-		
-class UEnumProperty(FPropertyTag):
-	def __init__(self, stream):
-		super().__init__(stream)
-		if (debug):
-			print(self.__class__.__name__  + " @ {}".format(stream.tell()))
-		self.EnumName = FName(stream)
-		self.Guid = FPropertyGuid(stream)
-		self.Value = FName(stream)
-		
-class UTextProperty(FPropertyTag):
-	def __init__(self, stream):
-		super().__init__(stream)
-		if (debug):
-			print(self.__class__.__name__  + " @ {}".format(stream.tell()))
-		self.Guid = FPropertyGuid(stream)
-		self._unknown = UInt64(stream) #TODO: what is this?
-		self.Key = FPropertyGuid(stream)
-		self.Hash = UE4String(stream)
-		self.Value = UE4String(stream)
-		
-class UStructProperty(FPropertyTag):
-	def __init__(self, stream):
-		super().__init__(stream)
-		if(debug):
-			print(self.__class__.__name__  + " @ {}".format(stream.tell()))
-		self.StructName = FName(stream)
-		self.StructGuid = UE4Guid(stream)
-		self.Guid = FPropertyGuid(stream)
-		
-		if(debug):
-			print("\t[UStructProperty] Creating elements starting @ {}".format(stream.tell()))
-		
-		#self.Elems = stream.read(self.Size.value())
-		#self.Elems = FixedArray(Int8, self.Size, stream)
-		self.Elems = ByteX(self.Size.value(), stream)
-		
-		if(debug):
-			print("[UStructProperty] End elements @ {}".format(stream.tell()))
-		
-		self.Value = self.Elems
-class UAsset(BaseElem):
-	def __init__(self, stream):
-		super().__init__(stream)
-		self.Summary = FPackageFileSummary(stream)
+			return self.ref()
 			
-#		for i,v in enumerate(self.Summary.Names):
-#			print("{}, {}".format(i, v.Name.String))
+	def to_dump(self):
+		return {
+			'Index' : self.Index,
+			'Value' : self.value()
+		}
+
+class FObjectImport(BaseElem):
+	def __init__(self, ctx):
+		super().__init__(ctx)
+		self.ClassPackage = FName(ctx)
+		self.ClassName = FName(ctx)
+		self.PackageRef = FPackageIndex(ctx)
+		self.ObjectName = FName(ctx)
+	def to_dump(self):
+		return {
+			'ObjectName' : self.ObjectName
+		}
+class FObjectExport(Primitive):
+	def __init__(self, ctx):
+		super().__init__(ctx)
+		self.ClassIndex = FPackageIndex(ctx)
+		self.SuperIndex = FPackageIndex(ctx)
+		self.TemplateIndex = FPackageIndex(ctx)
+		self.OuterIndex = FPackageIndex(ctx)
+		self.ObjectName = FName(ctx)
+		self.ObjectFlags = EObjectFlags(ctx)
+		self.SerialSize = Int8(ctx)
+		self.SerialOffset = Int8(ctx)
+		self.ForcedExport = UE4Bool(ctx)
+		self.NotForClient = UE4Bool(ctx)
+		self.NotForServer = UE4Bool(ctx)
+		self.PackageGuid = UE4Guid(ctx)
+		self.PackageFlags = UInt4(ctx)
+		self.NotAlwaysLoadedForEditorGame = UE4Bool(ctx)
+		self.IsAsset = UE4Bool(ctx)
+		self.FirstExportDependency = Int4(ctx)
+		self.SerializationBeforeSerializationDependencies = UE4Bool(ctx)
+		self.CreateBeforeSerializationDependencies = UE4Bool(ctx)
+		self.SerializationBeforeCreateDependnecies = UE4Bool(ctx)
+		self.CreateBeforeCreateDependencies = UE4Bool(ctx)
+		#self.DynamicType = EDynamicType(ctx)
+	def to_dump(self):
+		return {
+			'ClassIndex' : self.ClassIndex.ref().ObjectName.value().Name.String,
+			'ObjectName' : self.ObjectName.value().Name.String
+		}
+class FPackageFileSummary(Primitive):
+	def __init__(self, ctx):
+		super().__init__(ctx)
+		self.Tag = Int4(ctx)
+		self.FileVersionUE4 = Int4(ctx)
+		self.FileVersionLicenseeUE4 = Int4(ctx)
+		self.FileVersionUE3 = Int4(ctx)
+		self.FileVersionLicenseeUE3 = Int4(ctx)
+		self.CustomVersion = PrefixArray(FCustomVersion, ctx)
+		self.TotalHeaderSize = Int4(ctx)
+		self.FolderName = UE4String(ctx)
+		self.PackageFlags = UInt4(ctx)
+		self.NameCount = Int4(ctx)
+		self.NameOffset = Int4(ctx)
+		
+		if (ctx.debug):
+			print("Creating Names array @ {}".format(self.NameOffset.value()))
+		saved = ctx.tell()
+		ctx.seek(self.NameOffset.value())
+		self.Names = FixedArray(FNameEntry, self.NameCount, ctx)
+		ctx.Names = self.Names
+		ctx.seek(saved)
+		
+
+		
+		self.GatherableNameCount = Int4(ctx)
+		self.GatherableNameOffset = Int4(ctx)
+		self.ExportCount = Int4(ctx)
+		self.ExportOffset = Int4(ctx)
+		
+		if (ctx.debug):
+			print("Creating Export (len={}) array @ {}".format(self.ExportCount.value(), self.ExportOffset.value()))
+		saved = ctx.tell()
+		ctx.seek(self.ExportOffset.value())
+		self.Exports = FixedArray(FObjectExport, self.ExportCount, ctx)
+		ctx.Exports = self.Exports
+		ctx.seek(saved)
+		
+		self.ImportCount = Int4(ctx)
+		self.ImportOffset = Int4(ctx)
+		
+		if (ctx.debug):
+			print("Creating Import array @ {}".format(self.ImportOffset.value()))
+		saved = ctx.tell()
+		ctx.seek(self.ImportOffset.value())
+		self.Imports = FixedArray(FObjectImport, self.ImportCount, ctx)
+		ctx.Imports = self.Imports
+		ctx.seek(saved)
+		
+		self.DependsOffset = Int4(ctx)
+		self.SoftPackageReferenceCount = Int4(ctx)
+		self.SoftPackageReferenceOffset = Int4(ctx)
+		self.SearchableNameOffset = Int4(ctx)
+		self.ThumbnailTableOffset = Int4(ctx)
+		self.Guid = UE4Guid(ctx)
+		self.Generations = PrefixArray(FGenerationInfo, ctx)
+		self.SavedByEngineVersion = FEngineVersion(ctx)
+		self.CompatibleWithEngineVersion = FEngineVersion(ctx)
+		self.CompressionFlags = UInt4(ctx)
+		self.PackageSource = UInt4(ctx)
+		self.UnVersioned = UE4Bool(ctx)
+		self.AssetRegistryDataOffset = Int4(ctx)
+		self.BulkDataStartOffset = Int8(ctx)
+		self.WorldTileInfoDataOffset = Int4(ctx)
+		self.ChunkIDs = PrefixArray(Int4, ctx)
+		self.PreloadDependencyCount = Int4(ctx)
+		self.PreloadDependencyOffset = Int4(ctx)
+		
+		"""
+		if (ctx.debug):
+			print("Exports:")
+			for export in self.Exports:
+				print(json.dumps(export, cls=CustomEncoder, indent=2, sort_keys=True))
+				print("\n")
+			print("\n\n\n")
+		"""
+		
+class UAsset(Primitive):
+	def __init__(self, ctx):
+		super().__init__(ctx)
+		self.Summary = FPackageFileSummary(ctx)
+		
+		if (ctx.debug):
+			print("Summary finished parsing, creating exports...")
+		"""
+		print("Names:")
+		for i,n in enumerate(self.Summary.Names):
+			print(i, n)
+		"""
+		
 		for export in self.Summary.Exports:
-			save = stream.tell()
-			stream.seek(export.SerialOffset.value())
-			export.Object = UObject(stream, doPad=True, extra=export)
-			stream.seek(save)
-
-class UObject(BaseElem):
-	def __init__(self, stream, doPad=False, extra=None):
-		super().__init__(stream)
-		self.Tags = []
-		while(True):
-			if (debug):
-				print("UObject stream starting @ {} / {}".format(stream.tell(), self.offset))
-			#Check if a 'None' FName is next in the stream, break if true
-			saved = stream.tell()
-			temp = FName(stream)
-			if (temp.value().CasePreservingHash.value() == 0xDC5):
-				if (debug):
-					print("'None' tag found @ {}".format(temp.offset))
-				break
-			stream.seek(saved)
-			if (debug):
-				print("Processing UObject tag stream @ {}".format(stream.tell()))
+			if (ctx.debug):
+				print("Serial offset={}".format(export.SerialOffset))
+				print("Total Header Size={}".format(self.Summary.TotalHeaderSize.value()))
+				
+			save = ctx.tell()
 			
-			#decode a full FPropertyTag to get next Type name
-			tag = FPropertyTag(stream)
 			
-			if(debug):
-				print("UObject tag decoded @ {}:\n".format(tag.offset),
-						tag.Name.value().Name.String,
-						tag.Type.value().Name.String,
-						tag.Size.value(),
-						tag.Index.value()
-					)
-			
-			stream.seek(saved)
-			
-			taghash = tag.Type.value().CasePreservingHash.value()
-			
-			lookup = {
-				0xEAB3 : UObjectProperty,
-				0x2472 : UStrProperty,
-				0xC02D : UByteProperty,
-				0x4A36 : UIntProperty,
-				0x4A08 : UNameProperty,
-				0x69E3 : UArrayProperty,
-				0x8AB0 : UBoolProperty,
-				0x4A38 : UUInt32Property,
-				0xFDDE : UFloatProperty,
-				0xB774 : UTextProperty,
-				0xFAAE : USoftObjectProperty,
-				0x409D : UEnumProperty,
-				0xFC9C : UStructProperty,
-			}
-			
-			if (taghash in lookup):
-				self.Tags.append(lookup[taghash](stream))
+			#if (self.Summary.TotalHeaderSize.value() <= export.SerialOffset.value()):
+			if (False):
+				if (ctx.debug):
+					print("SerialOffset >= TotalHeaderSize! Attempting to use .uexp...")
+					f = ctx.stream.name #blah.uasset
+					fname = f[:-7] + ".uexp"
+					with open(fname, 'rb') as file:
+						subctx = ParserCtx(file, ctx.debug)
+						subctx.Names = ctx.Names
+						subctx.Exports = ctx.Exports
+						subctx.Imports = ctx.Imports
+						
+						subctx.seek( export.SerialOffset.value() - self.Summary.TotalHeaderSize.value())
+						export.Object = UObject(subctx, doPad=True, extra=export)
 			else:
-				raise NotImplementedError("Unknown tag type: {}, hash: 0x{:X}" \
-										  .format(tag.Type.value().Name.String, \
-										  tag.Type.value().CasePreservingHash.value()))
+				ctx.seek(export.SerialOffset.value())
+				export.Object = UObject(ctx, doPad=True, extra=export)
+				
+			ctx.seek(save)
+			
+class UObject(Primitive):
+	def __init__(self, ctx, doPad=False, extra=None):
+		super().__init__(ctx)
+		if (ctx.debug):
+			print("UObject starting @ {}".format(ctx.tell()))
+		self.Tags = []
+		self.Extra = None
+		while(True):		
+			if (ctx.debug):
+				print("Decoding tag @ {}".format(ctx.tell()))
+			saved = ctx.tell()
+			#Grab FName, see if it is 'None'
+			temp = FName(ctx)
+			s = temp.value().Name.value()
+			if 'None' in s:
+				if (ctx.debug):
+					print("'None' tag found @ {}\n".format(temp.offset))
+				break
+			#Not a 'None' tag, revert position	
+			ctx.seek(saved)
+			#Decode full FPropertyTag header
+			tag = FPropertyTag(ctx)			
+			#Use tag.TypeName to decode proper tag
+			ctx.seek(saved)
+			if (ctx.debug):
+				print("Header decoded:")
+				print(tag.to_dump())
+			#Grab Type hash
+			hash = tag.Type.value().CasePreservingHash.value()
+			#decode and construct full tag
+			dec = ctx.decodeHash(hash)(ctx)
+			
+			if (ctx.debug):
+				print("Final:")
+				print(dec.to_dump())
+				
+			self.Tags.append(dec)
 		
 		if (doPad):
-			if(debug):
-				print("Inserting padding @ {}".format(stream.tell()))
-			self._pad = UInt32(stream)
-		else:
-			if(debug):
-				print("Padding not inserted @ {}".format(stream.tell()))
-		
-		
-		#if (next4 == b'\x00\x00\x00\x00'):
-		#	print("AWFUL HACK: detected padding should be inserted")
-		#	self._pad = UInt32(stream)
-		
+			if (ctx.debug):
+				print("Reading in padding @ {}".format( ctx.tell()))
+			self.padding = UInt4(ctx)				
+			
 		if (extra is not None):
-			if (debug):
-				print("Processing extra UObject data")
-			objref = extra.ClassIndex.value()
-			taghash = objref.ObjectName.value().CasePreservingHash.value()
-			
-			if (debug):
-				print("UObject has extra data attached: {}".format(objref.ObjectName.value().Name.String))
-			
+			if (ctx.debug):
+				print("Processing extra data starting @ {}".format(ctx.tell()))
+				print("Extra data:")
+				print(extra.to_dump())
+				
+			objname = extra.ClassIndex.ref().ObjectName
+			taghash = objname.value().CasePreservingHash.value()
+				
 			lookup = {
 				0x10EE : UDataTable,
-				0x8FD5 : UStringTable
+				0x8FD5 : UStringTable,
+				
 			}
-			
+				
 			if (taghash in lookup):
-				self.ObjectData = lookup[taghash](stream)
+				self.Extra = lookup[taghash](ctx)
 			else:
-				raise NotImplementedError(objref.ObjectName.value().Name.String, taghash)
-		if (debug):
-			print("End of UObject\n\n")
-#Special FName just for UDataTable entries
-class FName_special(BaseElem):
-	def __init__(self, stream):
-		super().__init__(stream)
-		self.Index = Int32(stream)
-	def value(self):
-		return SummaryNames[self.Index.value()]
+				#print("Hash not in lookup")
+				#raise NotImplementedError("{} hash=0x{:02X}".format(objname, taghash))
+				self.Extra = UUnknownExport(ctx, objname, taghash, extra.SerialSize)
+		if (ctx.debug):
+			print("[UObject] end")
+	def to_dump(self):
+		return {
+			'Tags' : self.Tags,
+			'Extra' : self.Extra
+		}
 
-class UDataTable_Entry(BaseElem):
-	def __init__(self, stream):
-		super().__init__(stream)
-		if (debug):
-			print("UDataTable_Entry @ {}".format(self.offset))
-		#wtf this FName index is only 32 bits, not 64
-		#but the field is 64-bits wide..
+class UUnknownExport(Primitive):
+	def __init__(self, ctx, name, hash, size):
+		super().__init__(ctx)
+		if (ctx.debug):
+			print("Unknown top-level export type: {} (hash=0x{:04X})".format(name, hash))
+			print("Blindly reading in {} bytes...".format(size.value()))
+		self.Unknown = ctx.read(size.value())
 		
-		self.Index = FName_special(stream)
-		if (debug):
-			print("[UDTE] Index @ {} : {}".format(self.Index.offset, self.Index.value()))
-		#TODO: what the hell are these 32 bits used for?
-		self._unknown = UInt32(stream)
-		self.Obj = UObject(stream, doPad=False, extra=None)
+class UStructProperty_special(Primitive):
+	def __init__(self, ctx):
+		super().__init__(ctx)
+		if (ctx.debug):
+			print("Unknown top-level StructProperty!?")
+			print("Blindly reading in bytes specified in ExportSize...")
+		self.Unknown = ctx.read(36)
+class UDataTable(Primitive):
+	def __init__(self, ctx):
+		super().__init__(ctx)
+		if (ctx.debug):
+			print("[UDataTable] @ {}".format(ctx.tell()))
+		self.Count = Int4(ctx)
+		self.Data = [UDataTable_Entry(ctx) for _ in range(self.Count.value())]
+	def to_dump(self):
+		return {
+			'Count' : self.Count,
+			'Data' : self.Data
+		}
 		
-class UDataTable(BaseElem):
-	def __init__(self, stream):
-		super().__init__(stream)
-		self.Count = Int32(stream)
-		self.Data = [UDataTable_Entry(stream) for _ in range(self.Count.value())]
-		
-class UStringTable_Entry(BaseElem):
-	def __init__(self, stream):
-		super().__init__(stream)
-		self.Left = UE4String(stream)
-		self.Right = UE4String(stream)
-class UStringTable(BaseElem):
-	def __init__(self, stream):
-		super().__init__(stream)
-		self.Index = UE4String(stream)
-		self.Count = Int32(stream)
-		self.Data = FixedArray(UStringTable_Entry, self.Count, stream)
-class UAssetEncoder(json.JSONEncoder):
-	def default(self, obj):
-		if isinstance(obj, bytes):
-			return "0x" + str(binascii.hexlify(obj))[2:-1]
-		if isinstance(obj, UE4Guid):
-			return obj.raw
-		if isinstance(obj, FNameEntry):
-			return obj.Name
-		d = obj.__dict__		
-		do = OrderedDict()
-		for k,v in sorted(d.items()):
-			do[k] = v
-		
-		if hasattr(obj, 'value'):
-			if callable(obj.value):
-				do['Value'] = obj.value()
-				if not hasattr(obj, 'Type'):
-					do['Type'] = obj.__class__.__name__
-		
-		return do
 
-#helper class to organize export tags into something manageable
-#This is what will actually be JSON'ized
-#tags is a UDataTable_Entry object
-class Item():
-	def __init__(self, tags):
-		self.Key = tags.Index
-		d = {}
-		for prop in tags.Obj.Tags:
-			k = prop.Name.value().Name.String
-			v = (prop.Type.value().Name.String, prop.Value)
-			d[k] = v
-		self.Properties = OrderedDict()
-		for k,v in sorted(d.items(), key= lambda obj: obj[1][1].offset):
-			self.Properties[k] = v
+class UDataTable_Entry(Primitive):
+	def __init__(self, ctx):
+		super().__init__(ctx)
+		self.Index = FName_short(ctx)
+		self._unknown = UInt4(ctx)
+		self.Obj = UObject(ctx, doPad=False, extra=None)
+	def to_dump(self):
+		return {
+			'Name' : self.Index.value().Name.String,
+			'Obj' : self.Obj
+		}
+		
+class UStringTable(Primitive):
+	def __init__(self, ctx):
+		super().__init__(ctx)
+		self.Unknown = UInt4(ctx)
+		self.Count = Int4(ctx)
+		self.Elems = dict()
+		if (ctx.debug):
+			print("String Table: reading in {} elements".format(self.Count))
+		for i in range(self.Count.value()):
+			self.Elems[ UE4String(ctx) ] = UE4String(ctx)
+		if (ctx.debug):
+			print("String table ends @ {}".format(ctx.tell()))
+		
+class FPropertyGuid(Primitive):
+	def __init__(self, ctx):
+		super().__init__(ctx)
+		self.HasGuid = UInt1(ctx)
+		if (self.HasGuid.value() != 0):
+			self.Guid = UInt16(ctx)
+class FPropertyTag(Primitive):
+	def __init__(self, ctx):
+		super().__init__(ctx)
+		self.Name = FName(ctx)
+		self.Type = FName(ctx)
+		self.Size = Int4(ctx)
+		self.Index = Int4(ctx)
+	def __str__(self):
+		return "FPropertyTag(Name={}, Type={}, Size={}, Index={})".format(self.Name, self.Type, self.Size, self.Index)
+	def to_dump(self):
+		d = {
+			'Name' : self.Name.value().Name.String,
+			'Type' : self.Type.value().Name.String,
+		}
+		if hasattr(self, 'value'):
+			if callable(self.value):
+				d['value'] = self.value()
+			else:
+				d['value'] = self.value
+		if hasattr(self, 'Value'):
+			if callable(self.Value):
+				d['Value'] = self.Value()
+			else:
+				d['Value'] = self.Value
+		return d
 
-class ItemInfoOnly():
-	def __init__(self, tags):
-		self.Key = tags.Index
-		d = {}
-		for prop in tags.Obj.Tags:
-			k = prop.Name.value().Name.String
-			obj = prop.Value
-			if hasattr(obj, 'Value'):
-				if callable(obj.Value):
-					v = prop.Value.Value()
+		
+class UArrayProperty(FPropertyTag):
+	def __init__(self, ctx):
+		super().__init__(ctx)
+		self.ArrayType = FName(ctx)
+		self.Guid = FPropertyGuid(ctx)
+		self.Count = Int4(ctx)
+		
+		h = self.ArrayType.value().CasePreservingHash.value()
+		tagclass = ctx.decodeHash(h)
+		#Store size to figure out how much extra crap to read
+		saved = ctx.tell()
+		
+		self.Elems = []
+		if tagclass is UStructProperty:
+			self.Elems.append(tagclass(ctx))
+		else:
+			
+			for i in range(self.Count.value()):
+			
+				lookup = {
+					UBoolProperty : lambda ctx: UInt1(ctx),
+					UIntProperty : lambda ctx: Int4(ctx),
+					UUInt32Property : lambda ctx: UInt4(ctx),
+					UByteProperty : lambda ctx: UInt1(ctx),
+					UFloatProperty : lambda ctx: Float4(ctx),
+					UStrProperty : lambda ctx: UE4String(ctx),
+					UObjectProperty : lambda ctx: FPackageIndex(ctx),
+					UNameProperty : lambda ctx: FName(ctx)
+				}
+				if tagclass in lookup:
+					self.Elems.append(lookup[tagclass](ctx))
+					
 				else:
-					v = prop.Value.Value
-			if hasattr(obj, 'value'):
-				if callable(obj.value):
-					v = prop.Value.value()
-				else:
-					v = prop.Value.value
-			v = (prop.Type.value().Name.String, v)
-			d[k] = v
-		self.Properties = d
+					raise NotImplementedError("ArrayProp w/ {}, hash={}".format(tagclass, h))
+		current = ctx.tell()
+		nextTag = saved + self.Size.value() - 4
+		if (nextTag - current) > 0:
+			if (ctx.debug):
+				print("Current={}, NextTag={}".format(current, nextTag))
+			self.Unknown = ctx.read(nextTag - current)
+		ctx.seek( saved + self.Size.value()-4)
+		if (ctx.debug):
+			print("ArrayProperty(Type={}, Count={})".format(self.ArrayType, self.Count))
+	def to_dump(self):
+		raise NotImplementedError(self.__class__.__name__ + " can't be dumped")
 		
-if __name__ == "__main__":
-	import argparse
-	import sys
-	parser = argparse.ArgumentParser( \
-			description='Dump UAsset DataTable to JSON',
-			usage='%(prog)s [filename]'
-			)
-	parser.add_argument('filename', help='UAsset filename', type=argparse.FileType('rb'))
-	parser.add_argument('--no-names', help='Do not dump name table', action='store_true') #don't output Names
-	parser.add_argument('--no-data', help='Do not dump exported data', action='store_true') #don't output exported data
-	parser.add_argument('--values-only', help='Only print values, not offset/length information', action='store_true')
-	parser.add_argument('--debug', help='Verbose (and buggy) printing of FPropertyTag parsing. This *will* break JSON formatting!', action='store_true')
-	args = parser.parse_args()
-	
-	#set debug flag from argument
-	debug = args.debug
-	
-	#Parse uasset file
-	uasset = UAsset(args.filename)
-	
-	if (args.values_only):
-		iclass = ItemInfoOnly
-	else:
-		iclass =  Item
-	
-	#Output Names
-	if not args.no_names:
-		print( json.dumps( uasset.Summary.Names, cls=UAssetEncoder, indent=2) )
-	#Output exported data
-	if not args.no_data:
-		#Assuming only one export!
-		assert(uasset.Summary.ExportCount.value() == 1)
-		#TODO: handle multiple exports
-		#Grab the export'ed stuff we actually care about
-		items = [ iclass(obj) for obj in uasset.Summary.Exports[0].Object.ObjectData.Data]
-		#JSONify it
-		print(json.dumps(items, cls=UAssetEncoder, indent=2))
-	sys.exit()
+class UStructProperty(FPropertyTag):
+	def __init__(self, ctx):
+		super().__init__(ctx)
+		self.StructName = FName(ctx)
+		self.StructGuid = UE4Guid(ctx)
+		self.Guid = FPropertyGuid(ctx)
+		
+		saved = ctx.tell()
+		try:
+			self.Value = UObject(ctx, doPad=False, extra=None)
+		except Exception as e:
+			if (ctx.debug):
+				print("Exception in UStructProperty: {}".format(e))
+				print("Continuing by blind-reading {} bytes from {} to {}" \
+				.format(self.Size.value(), ctx.tell(), ctx.tell() + self.Size.value()))
+			ctx.seek(saved)
+			self.Value = ctx.read(self.Size.value())
+class UObjectProperty(FPropertyTag):
+	def __init__(self, ctx):
+		super().__init__(ctx)
+		self.Guid = FPropertyGuid(ctx)
+		self.Value = FPackageIndex(ctx)
+class USoftObjectProperty(FPropertyTag):
+	def __init__(self, ctx):
+		super().__init__(ctx)
+		self.Guid = FPropertyGuid(ctx)
+		self.Package = FName(ctx)
+		self.Path = UE4String(ctx)
+	def to_dump(self):
+		raise NotImplementedError(self.__class__.__name__ + " can't be dumped")
+class UByteProperty(FPropertyTag):
+	def __init__(self, ctx):
+		super().__init__(ctx)
+		self.EnumName = FName(ctx)
+		self.Guid = FPropertyGuid(ctx)
+		self.Value = FName(ctx)
+class UStrProperty(FPropertyTag):
+	def __init__(self, ctx):
+		super().__init__(ctx)
+		self.Guid = FPropertyGuid(ctx)
+		self.Value = UE4String(ctx)
+class UNameProperty(FPropertyTag):
+	def __init__(self, ctx):
+		super().__init__(ctx)
+		self.Guid = FPropertyGuid(ctx)
+		self.Value = FName(ctx)
+class UIntProperty(FPropertyTag):
+	def __init__(self, ctx):
+		super().__init__(ctx)
+		self.Guid = FPropertyGuid(ctx)
+		self.Value = Int4(ctx)
+class UUInt32Property(FPropertyTag):
+	def __init__(self, ctx):
+		super().__init__(ctx)
+		self.Value = UInt4(ctx)
+		self.Guid = FPropertyGuid(ctx)
+class UBoolProperty(FPropertyTag):
+	def __init__(self, ctx):
+		super().__init__(ctx)
+		self.Value = UInt1(ctx)
+		self.Guid = FPropertyGuid(ctx)
+class UFloatProperty(FPropertyTag):
+	def __init__(self, ctx):
+		super().__init__(ctx)
+		self.Guid = FPropertyGuid(ctx)
+		self.Value = Float4(ctx)
+class UEnumProperty(FPropertyTag):
+	def __init__(self, ctx):
+		super().__init__(ctx)
+		self.EnumName = FName(ctx)
+		self.Guid = FPropertyGuid(ctx)
+		self.Value = FName(ctx)
+class UTextProperty(FPropertyTag):
+	def __init__(self, ctx):
+		super().__init__(ctx)
+		if self.Size.value() < 8:			
+			pos = ctx.tell()
+			ctx.seek(pos + 0x19 + self.Size.value())
+			if (ctx.debug):
+				print("TextProperty jump forward to {}".format(ctx.tell()))
+		self.Guid = FPropertyGuid(ctx)
+		self.Unknown = UInt8(ctx)
+		self.Key = FPropertyGuid(ctx)
+		self.Hash = UE4String(ctx)
+		self.Value = UE4String(ctx)
+	def to_dump(self):
+		raise NotImplementedError(self.__class__.__name__ + " can't be dumped")
+		
+class UMulticastDelegateProperty(FPropertyTag):
+	def __init__(self, ctx):
+		super().__init__(ctx)
+		#TODO: wtf is this
+		self.Guid = FPropertyGuid(ctx)
+		self.Unknown = ctx.read(16)
+	def to_dump(self):
+		raise NotImplementedError(self.__class__.__name__ + " can't be dumped")
