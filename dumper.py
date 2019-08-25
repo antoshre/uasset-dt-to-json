@@ -735,3 +735,30 @@ class UMulticastDelegateProperty(FPropertyTag):
 		self.Unknown = ctx.read(16)
 	def to_dump(self):
 		raise NotImplementedError(self.__class__.__name__ + " can't be dumped")
+		
+#Filename is actual file name
+#ie: "PB_DT_DropRateMaster.uasset"
+def dumpFile(filename, debug=False):
+	print("Parsing {}".format(filename))
+	with open(filename, 'rb') as file:
+		ctx = ParserCtx(file, debug=debug)
+		uasset = UAsset(ctx)
+		print("Dumping Names...")
+		j = json.dumps(uasset.Summary.Names, cls=To_Dump_Encoder, indent=2, sort_keys=False)
+		with open(file.name[:-7] + "-names.json", 'w') as outputfile:
+			outputfile.write(j)
+		print("done")
+		
+		print("Dumping exports...")
+		for i,export in enumerate(uasset.Summary.Exports):
+			j = json.dumps(export.Object, cls=To_Dump_Encoder, indent=2, sort_keys=True)
+			with open(file.name[:-7] + "-export-" + str(i) + ".json", "w") as outputfile:
+				outputfile.write(j)
+		print("done")
+		
+		print("Dumping imports...")
+		for i,imp in enumerate(uasset.Summary.Imports):
+			j = json.dumps(export.Object, cls=To_Dump_Encoder, indent=2, sort_keys=True)
+			with open(file.name[:-7] + "-import-" + str(i) + ".json", "w") as outputfile:
+				outputfile.write(j)
+		print("done")
