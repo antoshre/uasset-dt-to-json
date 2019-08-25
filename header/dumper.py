@@ -167,6 +167,13 @@ class FixedArray(Primitive):
 			return self.Elems[key]
 		else:
 			raise AttributeError("Bad key: {} / {}".format(key, self.Count.value()))
+	def to_dump(self):
+		d = {
+			'Count' : self.Count,
+		}
+		for i,entry in enumerate(self.Elems):
+			d[i] = entry
+		return d
 			
 class EObjectFlags(Primitive):
 	def __init__(self, ctx):
@@ -569,14 +576,14 @@ class FPropertyTag(Primitive):
 		}
 		if hasattr(self, 'value'):
 			if callable(self.value):
-				d['value'] = self.value().value()
+				d['value'] = self.value()
 			else:
-				d['value'] = self.value.value()
+				d['value'] = self.value
 		if hasattr(self, 'Value'):
 			if callable(self.Value):
-				d['Value'] = self.Value().value()
+				d['Value'] = self.Value()
 			else:
-				d['Value'] = self.Value.value()
+				d['Value'] = self.Value
 		return d
 
 		
