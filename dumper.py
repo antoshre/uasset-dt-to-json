@@ -414,8 +414,7 @@ class UAsset(Primitive):
 			save = ctx.tell()
 			
 			
-			#if (self.Summary.TotalHeaderSize.value() <= export.SerialOffset.value()):
-			if (False):
+			if (self.Summary.TotalHeaderSize.value() <= export.SerialOffset.value()):
 				if (ctx.debug):
 					print("SerialOffset >= TotalHeaderSize! Attempting to use .uexp...")
 					f = ctx.stream.name #blah.uasset
@@ -754,7 +753,11 @@ def dumpFile(filename, debug=False):
 			print("Dumping exports...")
 		exports = []
 		for i,export in enumerate(uasset.Summary.Exports):
-			exports.append( json.dumps(export.Object, cls=To_Dump_Encoder, indent=2, sort_keys=True))
+			try:
+				exports.append( json.dumps(export.Object, cls=To_Dump_Encoder, indent=2, sort_keys=True))
+			except Exception as e:
+				if (ctx.debug):
+					print("Exception during export {} dump: {}".format(i, e))
 		if (ctx.debug):
 			print("done")
 		
@@ -762,7 +765,11 @@ def dumpFile(filename, debug=False):
 			print("Dumping imports...")
 		imports = []
 		for i,imp in enumerate(uasset.Summary.Imports):
-			imports.append( json.dumps(export.Object, cls=To_Dump_Encoder, indent=2, sort_keys=True) )
+			try:
+				imports.append( json.dumps(export.Object, cls=To_Dump_Encoder, indent=2, sort_keys=True) )
+			except Exception as e:
+				if (ctx.debug):
+					print("Exception during import {} dump: {}".format(i, e))
 		if (ctx.debug):
 			print("done")
 		
